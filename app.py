@@ -15,27 +15,6 @@ def to_base64_img(byte_data):
     base64_str = base64.b64encode(byte_data).decode()
     return f"data:image/png;base64,{base64_str}"
 
-def calculate_consumption(hotel, meter_type, position, new_reading):
-    con = sqlite3.connect("db.db")
-    query = """
-        SELECT Reading, Reading_date FROM meter_readings
-        WHERE hotel = ? AND Type = ? AND Position = ?
-        ORDER BY Reading_date DESC LIMIT 1
-    """
-    df = pd.read_sql(query, con=con, params=[hotel, meter_type, position])
-    con.close()
-
-    if df.empty:
-        return None, None  # First reading
-
-    last_reading = df.iloc[0]['Reading']
-    last_date = pd.to_datetime(df.iloc[0]['Reading_date'], dayfirst=True)
-    new_date = date.now()
-
-    consumption = new_reading - last_reading
-    days_between = (new_date - last_date).days
-
-    return consumption, days_between
 
 def meter_reader_updater():
     with st.form(key='uploader'): 
@@ -52,38 +31,44 @@ def meter_reader_updater():
                 return
 
             try:
-                consumption, days_between = calculate_consumption(hotel, meter_type, position, reading)
 
-                con = sqlite3.connect("db.db")
+                con = 'sqlite:///db.db'
                 df = pd.DataFrame({
-                    'Reading_date': [date.now().strftime("%d/%m/%Y, %H:%M")],
+                    'Reading_date': [date.now().strftime("%Y-%m-%d")],
                     'Photo': [photo.getvalue()],
                     'hotel': [hotel],
                     'Type': [meter_type],
                     'Reading': [reading],
                     'Position': [position],
-                    'Consumption': [consumption if consumption is not None else None],
-                    'Days_Since_Last': [days_between if days_between is not None else None]
 
                 })
-                df.to_sql('meter_readings', con=con, if_exists='append', index=False)
-                con.close()
+                df.to_sql('readings', con=con, if_exists='append', index=False)
 
-                st.success(f'✅ Entry Successfully Added! Consumption: {consumption} over {days_between} days' if consumption else '✅ First entry added.')
+
+                st.success(f'✅ Entry Successfully Added!')
                 wait(1.5)
             except Exception as e:
-                st.warning(f'Error: {e}')
-
+                st.write(e)
     try:
-        df = pd.read_sql('select * from meter_readings', con='sqlite:///db.db')
-        st.write(df[['Reading_date','hotel','Type','Reading','Position','Consumption','Days_Since_Last']])
+        df = pd.read_sql('select * from readings', con='sqlite:///db.db')
+        st.write(df[['Reading_date','hotel','Type','Reading','Position']])
     except Exception as e:
         st.write('Readings are empty')
 
 def data_viewer():
-    df = pd.read_sql('meter_readings', con='sqlite:///db.db')
+
+    col1,col2 = st.columns(2)
+
+    with col1: 
+        hotel_selection = st.selectbox('Select Hotel:',options = hotels)
+        from_date = st.date_input('From: ',value = '2025-01-01',)
+    with col2: 
+        meter_type = st.selectbox('Select Meter Type:',options = ['Gas', 'Electricity'])
+        to_date = st.date_input('To: ','today')
+
+
+    df = pd.read_sql_query(f'select * from readings where "Hotel" = "{hotel_selection}"  and "Type" = "{meter_type}" ', con='sqlite:///db.db')
     df['Photo'] = df['Photo'].apply(to_base64_img)
-    df['Consumption'] = pd.to_numeric(df['Consumption'],errors='coerce')
     st.data_editor(
         df,
         column_config={
@@ -92,8 +77,6 @@ def data_viewer():
             'Type': st.column_config.TextColumn('Type'),
             'Position': st.column_config.TextColumn('Position'),
             'hotel': st.column_config.TextColumn('Hotel'),
-            'Consumption': st.column_config.NumberColumn('Consumption'),
-            'Days_Since_Last': st.column_config.NumberColumn('Days Since Last'),
         },
         hide_index=True
     )
