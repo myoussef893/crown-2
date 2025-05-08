@@ -48,11 +48,6 @@ def meter_reader_updater():
                 wait(1.5)
             except Exception as e:
                 st.write(e)
-    try:
-        df = pd.read_sql('select * from readings', con='sqlite:///db.db')
-        st.write(df[['Reading_date','hotel','Type','Reading','Position']])
-    except Exception as e:
-        st.write('Readings are empty')
 
 def data_viewer():
 
